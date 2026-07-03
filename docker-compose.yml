@@ -1,0 +1,12 @@
+version: '3.8'
+
+# Services will be added incrementally per phase:
+# kafka, neo4j, producer_service, ml_consumer, backend_api, frontend.
+services: {}
+
+networks:
+  # Custom bridge network: containers attached to it resolve each other by
+  # service name via Docker's embedded DNS (e.g. "kafka:9092"), so we never
+  # depend on ephemeral container IP addresses.
+  moderation_network:
+    driver: bridge
