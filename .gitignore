@@ -1,0 +1,20 @@
+# --- Environment & Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+venv/
+
+# --- Node.js ---
+node_modules/
+
+# --- OS ---
+.DS_Store
+
+# --- Data & ML artifacts (prevent repo bloat) ---
+data/
+*.csv
+*.parquet
+model_weights/
