@@ -3,36 +3,33 @@ version: '3.8'
 # Services will be added incrementally per phase:
 # neo4j, producer_service, ml_consumer, backend_api, frontend.
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:latest
-    container_name: zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    networks:
-      - moderation_network
-
+  # Kafka in KRaft mode (no ZooKeeper): the broker manages its own metadata
+  # quorum. Required since Kafka 4.0 / cp-kafka 8.x removed ZooKeeper support.
   kafka:
     image: confluentinc/cp-kafka:latest
     container_name: kafka
-    depends_on:
-      - zookeeper
     ports:
       # Host access for local tooling (kcat, scripts run outside Docker).
       - "9092:9092"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Dual listeners: PLAINTEXT (kafka:29092) for container-to-container
-      # traffic on moderation_network; PLAINTEXT_HOST (localhost:9092) for
-      # clients running on the host machine.
+      # Combined mode: this single node acts as both broker and controller.
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      # Listeners: PLAINTEXT (kafka:29092) for container-to-container traffic
+      # on moderation_network; PLAINTEXT_HOST (localhost:9092) for clients on
+      # the host machine; CONTROLLER (29093) for KRaft quorum traffic only.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       # Single-broker dev cluster: internal topics can't replicate beyond 1.
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # Fixed cluster ID (base64 UUID) so log dirs stay valid across restarts.
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     networks:
       - moderation_network
 
