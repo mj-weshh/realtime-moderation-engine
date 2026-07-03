@@ -48,6 +48,20 @@ services:
     networks:
       - moderation_network
 
+  neo4j:
+    image: neo4j:5-community
+    container_name: neo4j
+    ports:
+      - "7474:7474" # HTTP browser UI
+      - "7687:7687" # Bolt protocol (drivers)
+    environment:
+      NEO4J_AUTH: neo4j/testpassword
+    volumes:
+      # Bind mount so graph data survives container recreation.
+      - ./neo4j_data:/data
+    networks:
+      - moderation_network
+
 networks:
   # Custom bridge network: containers attached to it resolve each other by
   # service name via Docker's embedded DNS (e.g. "kafka:9092"), so we never
