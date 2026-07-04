@@ -1,0 +1,59 @@
+site_name: Real-Time Moderation Engine
+site_description: >-
+  A high-throughput, distributed pipeline that streams simulated social media
+  traffic through Kafka, scores it for toxicity with a transformer model, maps
+  malicious clusters in Neo4j, and visualizes alerts live in a Next.js
+  command center.
+site_author: Waweru Muhura
+repo_url: https://github.com/mj-weshh/realtime-moderation-engine
+repo_name: mj-weshh/realtime-moderation-engine
+
+theme:
+  name: material
+  palette:
+    # Dark mode (default)
+    - scheme: slate
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    # Light mode
+    - scheme: default
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.highlight
+    - search.suggest
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  # Enables ```mermaid code blocks rendered as diagrams.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Local Setup: local_setup.md
+  - Data Pipeline: data_pipeline.md
+  - Reference:
+      - Product Requirements (PRD): PRD.md
+      - Implementation Plan: implementation_plan.md
