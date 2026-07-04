@@ -18,3 +18,4 @@ data/
 *.csv
 *.parquet
 model_weights/
+neo4j_data/
