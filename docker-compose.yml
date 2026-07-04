@@ -48,6 +48,21 @@ services:
     networks:
       - moderation_network
 
+  producer_service:
+    build: ./producer_service
+    container_name: producer_service
+    depends_on:
+      - kafka
+    environment:
+      # Internal listener: containers reach the broker via service-name DNS.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MESSAGES_PER_SECOND: 50
+    volumes:
+      # Dataset mounted read-only instead of baked into the image (~400MB).
+      - ./data:/data:ro
+    networks:
+      - moderation_network
+
   neo4j:
     image: neo4j:5-community
     container_name: neo4j
