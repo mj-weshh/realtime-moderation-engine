@@ -18,4 +18,5 @@ data/
 *.csv
 *.parquet
 model_weights/
+model_cache/
 neo4j_data/
