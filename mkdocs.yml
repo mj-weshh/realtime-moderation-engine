@@ -54,6 +54,7 @@ nav:
   - Architecture: architecture.md
   - Local Setup: local_setup.md
   - Data Pipeline: data_pipeline.md
+  - ML Inference: ml_inference.md
   - Reference:
       - Product Requirements (PRD): PRD.md
       - Implementation Plan: implementation_plan.md

@@ -7,8 +7,8 @@ Everything runs locally via Docker Compose — no cloud accounts required. This 
 | Requirement | Notes |
 |---|---|
 | Docker Desktop | With Docker Compose v2 |
-| Python 3.13+ | Only for the one-time dataset fetch and bare-metal development (pandas 3.x requires ≥ 3.11) |
-| ~2 GB free disk | Dataset parquet files (~400 MB) + Hugging Face cache + Docker volumes |
+| Python 3.13+ | Dataset fetch, producer dev, and ML consumer dev (PyTorch + model cache need ~1 GB extra) |
+| ~3 GB free disk | Dataset parquet (~400 MB) + PyTorch + Hugging Face model cache + Docker volumes |
 
 ## Step 1 — Clone and Fetch the Dataset
 
@@ -67,7 +67,32 @@ Message delivered to raw_comments [partition 0]
 ### Neo4j Browser — <http://localhost:7474>
 
 - Connect with URL `bolt://localhost:7687`, username `neo4j`, password `testpassword`.
-- The database is empty until the Week 2 ML consumer starts writing graph data — a successful login is the verification.
+- The database is empty until you run `ml_consumer/database.py` (smoke test) or the Kafka consumer (Day 9). A successful login confirms Neo4j is reachable.
+
+## Step 4 — ML consumer development setup
+
+The ML consumer runs **bare-metal** for now (Docker integration is a later phase). Full module reference: [ML Inference](ml_inference.md).
+
+```powershell
+cd ml_consumer
+python -m venv venv
+.\venv\Scripts\activate        # Windows
+# source venv/bin/activate     # macOS / Linux
+
+pip install -r requirements.txt
+python model_loader.py         # download + cache unitary/toxic-bert (first run only)
+python inference.py            # batch scoring smoke test
+```
+
+To test Neo4j graph writes, start the database first:
+
+```bash
+docker-compose up -d neo4j
+cd ml_consumer
+python database.py
+```
+
+Then open Neo4j Browser and run `MATCH (n) RETURN n LIMIT 25` to see the test node.
 
 ## Everyday Operations
 
@@ -93,3 +118,6 @@ The UI polls the broker; give KRaft initialization ~20 seconds and refresh.
 
 **Changing the streaming rate.**
 Edit `MESSAGES_PER_SECOND` under `producer_service` in `docker-compose.yml` and re-run `docker-compose up -d producer_service`. Bare-metal runs respect the same environment variable.
+
+**`pip install` fails with a TLS / CA bundle error (Windows).**
+A stale `CURL_CA_BUNDLE` environment variable may point to a missing PostgreSQL certificate file. Clear it before installing: `$env:CURL_CA_BUNDLE = $null`, then retry `pip install -r requirements.txt`.

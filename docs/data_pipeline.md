@@ -12,8 +12,8 @@ The original dataset is flat — no users, no threads. The producer synthesizes 
 
 | Topic | Producer | Consumer | Status |
 |---|---|---|---|
-| `raw_comments` | `producer_service` | `ml_consumer` (Week 2) | **Live** |
-| `scored_comments` | `ml_consumer` (Week 2) | `backend_api` (Week 2) | Planned |
+| `raw_comments` | `producer_service` | `ml_consumer` (Day 9 Kafka loop) | **Live** |
+| `scored_comments` | `ml_consumer` (Day 9) | `backend_api` (Week 2) | Logic ready; not yet published |
 
 Both topics currently use a single partition on a single broker — sufficient for the local demo, and the consumer-side batching is designed to scale to partitioned topics unchanged.
 
@@ -39,9 +39,9 @@ Every message is a UTF-8 JSON object:
 | `timestamp` | `string` (ISO-8601 UTC, `Z` suffix) | Generation time of the event |
 | `reply_to_id` | `string` or `null` | `event_id` of the comment this replies to; `null` for top-level comments |
 
-## Payload Schema: `scored_comments` (planned)
+## Payload Schema: `scored_comments`
 
-The Week 2 ML consumer republishes each message with inference results appended, per the PRD:
+The ML consumer republishes each message with inference results appended. Scoring logic is implemented in `inference.py`; Kafka publishing is added in Day 9. See [ML Inference](ml_inference.md) for how probabilities are computed.
 
 ```json
 {
@@ -51,13 +51,33 @@ The Week 2 ML consumer republishes each message with inference results appended,
   "timestamp": "2026-07-04T21:09:39.170546Z",
   "reply_to_id": null,
   "scores": {
-    "toxicity": 0.92,
-    "identity_attack": 0.85,
-    "threat": 0.01
+    "toxicity": 0.9859,
+    "severe_toxicity": 0.3496,
+    "obscene": 0.5458,
+    "threat": 0.8785,
+    "insult": 0.7339,
+    "identity_attack": 0.0683
   },
   "is_flagged": true
 }
 ```
+
+### `scores` object (produced today by `score_text()`)
+
+| Key | Source model label |
+|---|---|
+| `toxicity` | `toxic` |
+| `severe_toxicity` | `severe_toxic` |
+| `obscene` | `obscene` |
+| `threat` | `threat` |
+| `insult` | `insult` |
+| `identity_attack` | `identity_hate` |
+
+There is no `sexual_explicit` key — the `unitary/toxic-bert` model does not classify that dimension.
+
+### `is_flagged` (Day 9)
+
+The Kafka orchestration layer will set `is_flagged: true` when `scores.toxicity >= 0.5` (configurable). This field is not yet appended to messages.
 
 ## Synthetic Graph Generation
 

@@ -1,6 +1,6 @@
 # Architecture
 
-The system is built as **decoupled, containerized microservices** connected by an event streaming backbone. No service calls another directly; everything flows through Kafka topics. This page explains the design decisions behind Week 1's infrastructure.
+The system is built as **decoupled, containerized microservices** connected by an event streaming backbone. No service calls another directly; everything flows through Kafka topics. This page explains the design decisions behind the infrastructure and the ml_consumer module split.
 
 ## The Decoupled Microservice Approach
 
@@ -15,7 +15,7 @@ flowchart LR
 
     producer -- "raw_comments" --> kafka
     kafka --> kafkaui
-    kafka -. "Week 2: ml_consumer" .-> neo4j
+    kafka -. "ml_consumer" .-> neo4j
 ```
 
 Each service has exactly one responsibility:
@@ -23,6 +23,7 @@ Each service has exactly one responsibility:
 | Service | Responsibility | Scaling story |
 |---|---|---|
 | `producer_service` | Simulate platform traffic at a configurable rate | Run multiple instances for higher throughput |
+| `ml_consumer` | Batched toxicity inference + Neo4j graph persistence | Bare-metal today; Docker in a future phase |
 | `kafka` | Buffer, order, and durably store the event stream | Partitions allow parallel consumers |
 | `neo4j` | Persist the social graph (users, comments, reply edges) | Independent of stream throughput |
 | `kafka_ui` | Operational visibility into topics and consumers | Dev tooling only |
@@ -31,7 +32,7 @@ Because services only share message *contracts* (JSON schemas, documented in [Da
 
 ## Why Kafka?
 
-A message queue between the producer and the (upcoming) ML consumer solves three problems that a direct HTTP call cannot:
+A message queue between the producer and the ML consumer solves three problems that a direct HTTP call cannot:
 
 1. **Throughput mismatch.** The producer emits ~50 msg/sec; transformer inference is slower and bursty. Kafka absorbs the difference — the consumer pulls batches at its own pace instead of being overwhelmed.
 2. **Durability and replay.** Messages are persisted with offsets. If the ML consumer crashes mid-stream, it resumes from its last committed offset with zero data loss (PRD fault-tolerance requirement). During development, a consumer can replay the whole topic from offset 0.
@@ -77,10 +78,10 @@ Toxicity rarely happens in isolation — it clusters in reply chains and brigadi
 (User)-[:POSTED]->(Comment)-[:REPLIES_TO]->(Comment)<-[:POSTED]-(User)
 ```
 
-Queries like "find users whose replies to each other are consistently toxic" are single Cypher traversals in Neo4j but painful multi-join queries in a relational store. Data persists across container restarts via a bind mount (`./neo4j_data:/data`).
+Queries like "find users whose replies to each other are consistently toxic" are single Cypher traversals in Neo4j but painful multi-join queries in a relational store. Graph population logic lives in `ml_consumer/database.py` — see [ML Inference](ml_inference.md) for the Cypher and connection details. Data persists across container restarts via a bind mount (`./neo4j_data:/data`).
 
 ## Design Constraints Carried Forward
 
 - **Single-broker, single-partition** topics are fine for a local demo but are called out explicitly (`KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1`) — production would use 3+ brokers.
-- **Model weights and datasets never enter images or git** — they are volume-mounted and gitignored, keeping images slim and the repo lightweight.
-- **Offsets commit only after downstream writes succeed** (Week 2 consumer requirement) — the delivery guarantee chain is designed end to end.
+- **Model weights and datasets never enter images or git** — datasets live in `data/`, model weights in `ml_consumer/model_cache/`; both are gitignored, keeping images slim and the repo lightweight.
+- **Offsets commit only after downstream writes succeed** (Day 9 consumer requirement) — the delivery guarantee chain is designed end to end. The inference and graph modules (`inference.py`, `database.py`) are already separated from the future Kafka loop (`main.py`) to satisfy the PRD's SOLID requirement.
