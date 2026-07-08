@@ -77,6 +77,22 @@ services:
     networks:
       - moderation_network
 
+  ml_consumer:
+    build: ./ml_consumer
+    container_name: ml_consumer
+    depends_on:
+      - kafka
+      - neo4j
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: testpassword
+    volumes:
+      - ./ml_consumer/model_cache:/app/model_cache
+    networks:
+      - moderation_network
+
 networks:
   # Custom bridge network: containers attached to it resolve each other by
   # service name via Docker's embedded DNS (e.g. "kafka:9092"), so we never
