@@ -38,7 +38,7 @@ The [`google/civil_comments`](https://huggingface.co/datasets/google/civil_comme
 
 
 
-The stack runs Kafka in **KRaft mode** (no Zookeeper — Kafka 4.x removed it; the broker manages its own metadata quorum). All services share a custom Docker bridge network, `moderation_network`, and address each other by service name.
+The stack runs Kafka in **KRaft mode** (no Zookeeper). All containerized services share `moderation_network` and address each other by service name. The ML consumer currently runs bare-metal for development.
 
 
 
@@ -107,6 +107,7 @@ flowchart LR
 | `neo4j` | `neo4j:5-community` | Graph storage for user/comment networks | `7474`, `7687` |
 
 | `producer_service` | Python 3.13 (custom image) | Streams enriched comments into Kafka | — |
+| `ml_consumer` | Python 3.13 (bare-metal) | Toxicity inference + Neo4j graph writes | — |
 
 | `ml_consumer` | Python 3.13 (custom image) | Batched toxicity inference + Neo4j writes | — |
 
@@ -186,7 +187,9 @@ docker-compose logs -f producer_service
 
 
 
-The producer streams the full 97k-comment dataset (~32 minutes at the default rate) and exits cleanly. Re-run it any time with `docker-compose up -d producer_service`.
+The producer streams the full 97k-comment dataset (~32 minutes at the default rate) and exits cleanly. Re-run it with `docker-compose up -d producer_service`.
+
+For ML consumer setup (model download, inference, Neo4j smoke tests), see [docs/ml_inference.md](docs/ml_inference.md) or the MkDocs site.
 
 
 
