@@ -1,171 +1,160 @@
 # ML Inference
 
-The **ml_consumer** service is the AI brain of the pipeline: it classifies incoming comments for toxicity, persists the social graph to Neo4j, and (once wired to Kafka) republishes scored events for the WebSocket API.
+The `ml_consumer` service consumes enriched comments from Kafka, runs batched transformer inference, writes the social graph to Neo4j, and republishes scored payloads to the `scored_comments` topic. This page is the canonical reference for the ML consumer (Days 7–9).
 
-!!! info "Implementation status"
-    **Core logic complete (Days 7–8):** model loading, batched inference, and Neo4j graph writes are implemented as standalone Python modules. **Pending (Day 9+):** Kafka consumer loop (`main.py`), `scored_comments` publishing, and Docker Compose integration.
-
-## Pipeline position
+## End-to-End Flow
 
 ```mermaid
 flowchart LR
-    kafka[(Kafka)]
-    mainPy[main.py<br/>Day 9]
-    scoreFn[score_text]
-    graphDB[GraphDB]
-    neo4j[(Neo4j)]
-
-    kafka -. "raw_comments<br/>consume" .-> mainPy
-    mainPy --> scoreFn
-    scoreFn --> graphDB
-    graphDB --> neo4j
-    scoreFn -. "scored_comments<br/>publish" .-> kafka
+    kafkaIn[(Kafka<br/>raw_comments)] --> consume[Batch consume<br/>up to 16 msgs]
+    consume --> score[score_text<br/>toxic-bert]
+    score --> neo4j[(Neo4j<br/>User + Comment graph)]
+    score --> produce[Produce<br/>scored_comments]
+    produce --> kafkaOut[(Kafka<br/>scored_comments)]
+    produce --> commit[Manual offset commit]
+    commit --> consume
 ```
 
-Solid boxes exist today as importable modules; dashed edges are the Day 9 orchestration layer.
+Each message is processed exactly once per consumer group: offsets advance only after Neo4j writes and Kafka producer delivery succeed for the entire batch.
 
-## Module map
+## Module Map
 
-| Module | Responsibility | Status |
-|---|---|---|
-| `model_loader.py` | Download and cache `unitary/toxic-bert` + tokenizer | Done |
-| `inference.py` | Batched toxicity scoring via `score_text()` | Done |
-| `database.py` | Neo4j graph writes via `GraphDB.insert_comment_graph()` | Done |
-| `main.py` | Kafka consume → score → graph → publish loop | Planned |
-
-Dependencies are listed in `ml_consumer/requirements.txt`: `torch`, `transformers`, `confluent-kafka`, `neo4j`.
-
-## Model initialization
-
-The default model is **[`unitary/toxic-bert`](https://huggingface.co/unitary/toxic-bert)** — a BERT-based multi-label toxicity classifier. Override at runtime with the `TOXICITY_MODEL_ID` environment variable.
-
-Weights are cached under `ml_consumer/model_cache/` (gitignored). On first run, Hugging Face downloads into that directory; subsequent runs load from disk without re-fetching.
-
-```python
-from model_loader import ToxicityModelLoader
-
-loader = ToxicityModelLoader()
-tokenizer, model = loader.load()
-```
-
-Smoke test: `python model_loader.py` — downloads the model (first run only) and prints tokenized output plus raw logits for a hardcoded string.
-
-## Inference: `score_text()`
-
-`inference.py` exposes the main scoring API:
-
-```python
-from inference import score_text
-
-results = score_text(["This is a test comment", "You are an idiot"])
-# -> list[dict[str, float]], one dict per input string
-```
-
-**Batch processing:** all strings in the batch are tokenized together with padding (`max_length=512`), then forwarded through the model in a single `torch.no_grad()` pass.
-
-**Multi-label, not multi-class:** toxic-bert treats each toxicity dimension independently. Logits are converted with **`torch.sigmoid`**, not softmax.
-
-### Score keys (model output → PRD names)
-
-| Model label | PRD / `scores` key |
+| Module | Responsibility |
 |---|---|
-| `toxic` | `toxicity` |
-| `severe_toxic` | `severe_toxicity` |
-| `obscene` | `obscene` |
-| `threat` | `threat` |
-| `insult` | `insult` |
-| `identity_hate` | `identity_attack` |
+| `model_loader.py` | Download and cache Hugging Face weights (`unitary/toxic-bert`) |
+| `inference.py` | Batched tokenization + sigmoid multi-label scoring |
+| `database.py` | Neo4j graph writes (`User`, `Comment`, `POSTED`, `REPLIES_TO`) |
+| `main.py` | Kafka consume → score → graph → publish loop with manual commits |
 
-Probabilities are rounded to four decimal places.
+## Model
 
-!!! note "Missing label"
-    The civil_comments dataset defines seven toxicity dimensions; this model produces **six**. There is no `sexual_explicit` score — do not fabricate one downstream.
+- **Checkpoint:** [`unitary/toxic-bert`](https://huggingface.co/unitary/toxic-bert) (multi-label sequence classifier)
+- **Output:** six independent probabilities via **sigmoid** (not softmax — labels are not mutually exclusive)
+- **Score keys:** `toxicity`, `severe_toxicity`, `obscene`, `threat`, `insult`, `identity_attack`
+- **Not scored:** `sexual_explicit` — toxic-bert exposes six labels; the civil_comments dataset defines seven
 
-Example output for a clearly toxic string:
+Weights are cached locally at `ml_consumer/model_cache/` (gitignored). The directory is bind-mounted in Docker so downloads survive image rebuilds.
 
-```json
+## Kafka Loop
+
+`main.py` orchestrates the pipeline:
+
+```mermaid
+flowchart TD
+    consume[consumer.consume BATCH_SIZE] --> parse[Parse JSON payloads]
+    parse --> score[score_text text batch]
+    score --> loop[For each message]
+    loop --> neo4j[insert_comment_graph]
+    neo4j --> build[Build scored_comments JSON]
+    build --> produce[producer.produce scored_comments]
+    produce --> flush[producer.flush]
+    flush --> commit[consumer.commit async=False]
+    commit --> consume
+```
+
+Per batch:
+
+1. `consumer.consume(num_messages=BATCH_SIZE, timeout=1.0)` — skip `None` and partition-EOF messages.
+2. Parse each value as JSON (see [Data Pipeline](data_pipeline.md) for the `raw_comments` schema).
+3. Call `score_text(texts)` for the full batch.
+4. For each `(payload, scores)` pair: write to Neo4j, produce to `scored_comments`.
+5. `producer.flush()` then `consumer.commit(asynchronous=False)`.
+
+On startup, `ToxicityModelLoader().load()` runs once so the first batch is not delayed by a cold model download.
+
+Consumer configuration:
+
+```python
 {
-  "toxicity": 0.9859,
-  "severe_toxicity": 0.3496,
-  "obscene": 0.5458,
-  "threat": 0.8785,
-  "insult": 0.7339,
-  "identity_attack": 0.0683
+    "bootstrap.servers": BOOTSTRAP_SERVERS,
+    "group.id": CONSUMER_GROUP,
+    "auto.offset.reset": "earliest",
+    "enable.auto.commit": False,
 }
 ```
 
-Smoke test: `python inference.py` — scores two hardcoded strings (benign vs toxic) and prints the dicts.
+## Neo4j Graph
 
-## Neo4j graph writes: `GraphDB`
-
-`database.py` implements the PRD Section 3.3 graph schema:
+Each scored comment creates:
 
 ```text
-(User)-[:POSTED]->(Comment)-[:REPLIES_TO]->(Comment)
+(User {user_id})-[:POSTED]->(Comment {event_id, text, timestamp, toxicity_score})
+(Comment)-[:REPLIES_TO]->(Comment)   # when reply_to_id is set
 ```
 
-### Connection settings
+The `toxicity_score` property on `Comment` is taken from `scores["toxicity"]`. Reply edges use `MERGE` on the parent comment so relationships form even when the parent arrives later in the stream.
 
-| Variable | Default | Docker Compose value (future) |
+## Environment Variables
+
+| Variable | Default (host) | Docker Compose |
 |---|---|---|
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | `kafka:29092` |
+| `KAFKA_CONSUMER_GROUP` | `ml_consumer_group` | same |
+| `RAW_TOPIC` | `raw_comments` | same |
+| `SCORED_TOPIC` | `scored_comments` | same |
+| `BATCH_SIZE` | `16` | same |
+| `CONSUME_TIMEOUT` | `1.0` | same |
+| `FLAG_THRESHOLD` | `0.5` | same |
 | `NEO4J_URI` | `bolt://localhost:7687` | `bolt://neo4j:7687` |
-| `NEO4J_USER` | `neo4j` | `neo4j` |
-| `NEO4J_PASSWORD` | `testpassword` | `testpassword` |
+| `NEO4J_USER` | `neo4j` | same |
+| `NEO4J_PASSWORD` | `testpassword` | same |
+| `TOXICITY_MODEL_ID` | `unitary/toxic-bert` | same |
 
-### `insert_comment_graph(payload, scores)`
+`is_flagged` is `true` when `scores["toxicity"] >= FLAG_THRESHOLD`.
 
-Accepts a `raw_comments`-shaped payload plus the scores dict from `score_text()`. Each call runs in a single write transaction:
+## Docker
 
-1. **`MERGE` User** on `user_id`
-2. **`CREATE` Comment** with `event_id`, `text`, `timestamp`, and `toxicity_score` (from `scores["toxicity"]`)
-3. **`CREATE` POSTED** relationship `(User)-[:POSTED]->(Comment)`
-4. If `reply_to_id` is present: **`MERGE` parent Comment** (stub if not yet inserted) and **`CREATE` REPLIES_TO** `(Comment)-[:REPLIES_TO]->(parent)`
+The `ml_consumer` service in `docker-compose.yml`:
 
-The parent `MERGE` handles out-of-order replies — a stub node is created when the reply arrives before its parent comment.
+- Builds from `ml_consumer/Dockerfile` (`python:3.13-slim`)
+- Depends on `kafka` and `neo4j`
+- Mounts `./ml_consumer/model_cache:/app/model_cache` for persistent Hugging Face cache
 
-```python
-from database import GraphDB
+!!! tip "First start"
+    The first container run downloads model weights into the bind-mounted cache. Subsequent rebuilds reuse cached weights. The first **image build** also installs Python dependencies — see [CPU-only PyTorch](#cpu-only-pytorch) below.
 
-with GraphDB() as db:
-    db.insert_comment_graph(payload, scores)
+## CPU-Only PyTorch
+
+`requirements.txt` pins CPU-only PyTorch via:
+
+```text
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 ```
 
-Smoke test (Neo4j must be running): `python database.py` — inserts one hardcoded test comment. Verify in Neo4j Browser at <http://localhost:7474>.
+The default Linux `torch` wheel on PyPI includes CUDA (~526 MB plus NVIDIA packages). The compose stack has no GPU, so the CPU index keeps Docker builds faster and images smaller. Bare-metal venv installs use the same index for consistency.
 
-## Bare-metal development setup
+## Bare-Metal Development
 
-From the repo root:
-
-```powershell
-cd ml_consumer
-python -m venv venv
-.\venv\Scripts\activate          # Windows
-# source venv/bin/activate       # macOS / Linux
-
-pip install -r requirements.txt
-python model_loader.py             # download + cache model (first run)
-python inference.py                # batch scoring smoke test
-```
-
-For the Neo4j smoke test, start the database first:
+With Kafka and Neo4j running via Compose:
 
 ```bash
-docker-compose up -d neo4j
 cd ml_consumer
-python database.py
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS / Linux
+
+pip install -r requirements.txt
+python main.py
 ```
 
-!!! tip "Windows pip TLS error"
-    If `pip install` fails with a missing CA bundle path, clear the stale PostgreSQL env var: `$env:CURL_CA_BUNDLE = $null`, then retry.
+Defaults connect to `localhost:9092` and `bolt://localhost:7687` — the host listeners exposed by Compose.
 
-## What's next (Day 9)
+## Fault Tolerance
 
-The Kafka orchestration layer will:
+Offsets commit **only after** Neo4j inserts and `scored_comments` produces succeed for the whole batch. If the consumer crashes mid-batch, uncommitted messages are replayed on restart.
 
-1. Subscribe to `raw_comments` and pull batches (e.g. 16 messages)
-2. Call `score_text()` on the batch texts
-3. Call `insert_comment_graph()` for each payload + scores pair
-4. Publish the combined payload to `scored_comments` with an `is_flagged` boolean
-5. Commit Kafka offsets only after Neo4j and `scored_comments` writes succeed
+Smoke test:
 
-See [Data Pipeline](data_pipeline.md) for topic schemas and [Architecture](architecture.md) for the fault-tolerance rationale.
+```bash
+docker-compose restart ml_consumer
+docker-compose logs -f ml_consumer
+```
+
+Processing should resume from the last committed offset without duplicate graph writes for already-committed batches (within the same consumer group).
+
+## Related Pages
+
+- [Data Pipeline](data_pipeline.md) — topic schemas and synthetic graph generation
+- [Local Setup](local_setup.md) — verification steps and troubleshooting
+- [Architecture](architecture.md) — why Kafka buffering and manual commits matter
