@@ -1,4 +1,5 @@
 import LiveFeed from "@/components/LiveFeed";
+import NetworkGraph from "@/components/NetworkGraph";
 
 export default function Home() {
   return (
@@ -18,11 +19,7 @@ export default function Home() {
             Network Graph
           </h3>
         </div>
-        <div className="flex flex-1 items-center justify-center p-6">
-          <p className="text-center text-sm text-command-muted">
-            Network Graph — visualization in Day 15
-          </p>
-        </div>
+        <NetworkGraph />
       </section>
     </div>
   );
