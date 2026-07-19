@@ -106,6 +106,22 @@ services:
     networks:
       - moderation_network
 
+  nextjs_client:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_WS_URL: ws://localhost:8081
+    container_name: nextjs_client
+    depends_on:
+      - websocket_api
+    ports:
+      - "3000:3000"
+    environment:
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
+    networks:
+      - moderation_network
+
 networks:
   # Custom bridge network: containers attached to it resolve each other by
   # service name via Docker's embedded DNS (e.g. "kafka:9092"), so we never

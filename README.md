@@ -2,6 +2,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-18-339933?logo=nodedotjs&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Apache Kafka](https://img.shields.io/badge/Apache%20Kafka-KRaft-231F20?logo=apachekafka&logoColor=white)
 ![Neo4j](https://img.shields.io/badge/Neo4j-5%20Community-4581C3?logo=neo4j&logoColor=white)
@@ -13,13 +14,13 @@ The project demonstrates production-grade MLOps, event-driven microservice archi
 
 ## How It Works
 
-The [`google/civil_comments`](https://huggingface.co/datasets/google/civil_comments) dataset (~97k test-split comments) is enriched with a synthetic social graph — user identities and reply chains — and streamed into Apache Kafka at a configurable rate. The **ML consumer** runs batched transformer inference, writes conversation graphs to Neo4j, and republishes scored payloads. The **WebSocket API** filters for flagged toxicity and broadcasts alerts to connected clients in real time. A Next.js dashboard is planned for Week 3.
+The [`google/civil_comments`](https://huggingface.co/datasets/google/civil_comments) dataset (~97k test-split comments) is enriched with a synthetic social graph — user identities and reply chains — and streamed into Apache Kafka at a configurable rate. The **ML consumer** runs batched transformer inference, writes conversation graphs to Neo4j, and republishes scored payloads. The **WebSocket API** filters for flagged toxicity and broadcasts alerts to connected clients in real time. The **Next.js dashboard** renders a live alert feed and force-directed graph of toxic conversation clusters.
 
 ## Current Architecture
 
-> **Status:** Week 2 complete — the full backend pipeline is live (producer → ML consumer → WebSocket bridge). The Next.js frontend is under active development.
+> **Status:** Complete — the full stack runs with a single `docker-compose up` command: producer → ML consumer → WebSocket bridge → Next.js dashboard.
 
-The stack runs Kafka in **KRaft mode** (no Zookeeper). All containerized services share `moderation_network` and address each other by service name. The ML consumer currently runs bare-metal for development.
+The stack runs Kafka in **KRaft mode** (no Zookeeper). All containerized services share `moderation_network` and address each other by service name.
 
 ```mermaid
 flowchart LR
@@ -34,6 +35,7 @@ flowchart LR
         kafka[(Kafka broker<br/>KRaft mode)]
         consumer[ml_consumer<br/>Python 3.13 + toxic-bert]
         wsapi[websocket_api<br/>Node 18]
+        nextjs[nextjs_client<br/>Next.js 16]
         kafkaui[Kafka UI]
         neo4j[(Neo4j 5)]
     end
@@ -46,6 +48,7 @@ flowchart LR
     consumer -- "scored_comments" --> kafka
     kafka --> wsapi
     wsapi -- "flagged alerts<br/>WebSocket :8081" --> browser
+    browser -- "dashboard :3000" --> nextjs
     kafka --> kafkaui
     browser -- ":8080" --> kafkaui
     browser -- ":7474" --> neo4j
@@ -59,12 +62,12 @@ flowchart LR
 | `producer_service` | Python 3.13 (custom image) | Streams enriched comments into Kafka | — |
 | `ml_consumer` | Python 3.13 (custom image) | Batched toxicity inference + Neo4j writes | — |
 | `websocket_api` | Node 18 Alpine (custom image) | Filters and broadcasts flagged comments over WebSocket | `8081` |
+| `nextjs_client` | Node 18 Alpine (custom image) | Real-time SOC dashboard (live feed + force graph) | `3000` |
 
 ## Prerequisites
 
 - **Docker Desktop** with Docker Compose
-- **Python 3.13+** (only needed for bare-metal development and the one-time dataset fetch; pandas 3.x requires ≥ 3.11)
-- **Node.js 18+** (only needed for bare-metal backend development)
+- **Python 3.13+** (only needed for the one-time dataset fetch; pandas 3.x requires ≥ 3.11)
 - **~2 GB free disk** for the dataset, model cache, and Docker volumes
 
 ## Quick Start
@@ -83,18 +86,21 @@ python fetch_data.py
 cd ..
 
 # 3. Build and launch the full stack
+docker-compose down -v
 docker-compose up --build -d
 
 # 4. Watch the pipeline
 docker-compose logs -f producer_service
 docker-compose logs -f ml_consumer
 docker-compose logs -f websocket_api
+docker-compose logs -f nextjs_client
 ```
 
-The first `ml_consumer` build installs CPU-only PyTorch and transformers. The first container start downloads toxic-bert weights into `ml_consumer/model_cache/` (~500 MB one-time).
+The first `ml_consumer` build installs CPU-only PyTorch and transformers. The first container start downloads toxic-bert weights into `ml_consumer/model_cache/` (~500 MB one-time). The `nextjs_client` build runs a production Next.js compile (~1–2 minutes first time).
 
 **Verify it's alive:**
 
+- **Dashboard** — <http://localhost:3000> → live alert feed and force-directed graph update in real time as flagged comments stream in.
 - Kafka UI — <http://localhost:8080> → `raw_comments` and `scored_comments` message counts climb.
 - Neo4j Browser — <http://localhost:7474> (login `neo4j` / `testpassword`) → `MATCH (n) RETURN n LIMIT 25` shows User and Comment nodes.
 - WebSocket — `npx wscat -c ws://localhost:8081` → flagged comment JSON streams in.
@@ -122,7 +128,7 @@ realtime-moderation-engine/
 ├── producer_service/    # Python service streaming enriched comments to Kafka
 ├── ml_consumer/         # Transformer inference, Neo4j graph writes, scored_comments
 ├── backend_api/         # Node.js Kafka consumer + WebSocket bridge (compose: websocket_api)
-├── frontend/            # (Week 3) Next.js real-time dashboard
+├── frontend/            # Next.js real-time dashboard (compose: nextjs_client)
 ├── docs/                # MkDocs pages, PRD, implementation plan
 └── docker-compose.yml   # Single-command orchestration
 ```
