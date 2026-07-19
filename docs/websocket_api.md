@@ -9,7 +9,8 @@ flowchart LR
     kafkaIn[(Kafka<br/>scored_comments)] --> consume[kafkajs consumer]
     consume --> filter[shouldBroadcast filter]
     filter --> broadcast[JSON fan-out]
-    broadcast --> clients[WebSocket clients]
+    broadcast --> dashboard[nextjs_client<br/>primary consumer]
+    broadcast --> debug[wscat / test clients]
 ```
 
 Benign comments never reach connected clients — the bridge drops them before broadcast to save bandwidth (PRD Section 4.3).
@@ -159,6 +160,7 @@ Defaults use `localhost:9092` for Kafka and listen on `:8081`.
 **Start the full stack:**
 
 ```bash
+docker-compose down -v
 docker-compose up --build -d
 docker-compose logs -f websocket_api
 ```
@@ -177,10 +179,15 @@ npx wscat -c ws://localhost:8081
 
 Expect JSON payloads with `is_flagged: true` and `scores.toxicity >= 0.5` only. Benign comments are silently filtered.
 
+**Dashboard (primary consumer):**
+
+Open <http://localhost:3000> — the live alert feed and force-directed graph consume the same WebSocket stream. See [Frontend Dashboard](frontend.md).
+
 ## Port Map
 
 | Port | Service | Purpose |
 |---|---|---|
+| `3000` | `nextjs_client` | Next.js SOC dashboard |
 | `8080` | Kafka UI | Topic and consumer inspection |
 | `8081` | `websocket_api` | WebSocket + `/health` |
 | `7474` | Neo4j | Browser UI |
@@ -191,5 +198,6 @@ Expect JSON payloads with `is_flagged: true` and `scores.toxicity >= 0.5` only. 
 
 - [Data Pipeline](data_pipeline.md) — `scored_comments` schema
 - [ML Inference](ml_inference.md) — upstream scoring and `is_flagged` derivation
+- [Frontend Dashboard](frontend.md) — primary WebSocket consumer (live feed + graph)
 - [Local Setup](local_setup.md) — full-stack verification steps
 - [Architecture](architecture.md) — why Kafka fan-out enables this bridge

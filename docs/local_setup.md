@@ -7,8 +7,7 @@ Everything runs locally via Docker Compose — no cloud accounts required. This 
 | Requirement | Notes |
 |---|---|
 | Docker Desktop | With Docker Compose v2 |
-| Python 3.13+ | Only for the one-time dataset fetch and bare-metal ML development (pandas 3.x requires ≥ 3.11) |
-| Node.js 18+ | Only for bare-metal backend development |
+| Python 3.13+ | Only for the one-time dataset fetch (pandas 3.x requires ≥ 3.11) |
 | ~2 GB free disk | Dataset parquet files (~400 MB) + Hugging Face model cache + Docker volumes |
 
 ## Step 1 — Clone and Fetch the Dataset
@@ -34,13 +33,14 @@ python fetch_data.py
 From the repo root:
 
 ```bash
+docker-compose down -v
 docker-compose up --build -d
 ```
 
-This builds the producer, ML consumer, and WebSocket API images and starts six containers: `kafka`, `kafka_ui`, `neo4j`, `producer_service`, `ml_consumer`, and `websocket_api`.
+This builds the producer, ML consumer, WebSocket API, and Next.js dashboard images and starts seven containers: `kafka`, `kafka_ui`, `neo4j`, `producer_service`, `ml_consumer`, `websocket_api`, and `nextjs_client`.
 
 !!! tip "First boot takes a moment"
-    Kafka needs ~20 seconds to initialize its KRaft quorum, and Neo4j ~30 seconds for first-time database setup. The first `ml_consumer` **image build** installs PyTorch and transformers (CPU-only torch is pinned to keep this reasonable). The first **container start** downloads toxic-bert weights into `ml_consumer/model_cache/`. The `websocket_api` image installs Node dependencies on first build. Brief connection warnings in early log lines are normal.
+    Kafka needs ~20 seconds to initialize its KRaft quorum, and Neo4j ~30 seconds for first-time database setup. The first `ml_consumer` **image build** installs PyTorch and transformers (CPU-only torch is pinned to keep this reasonable). The first **container start** downloads toxic-bert weights into `ml_consumer/model_cache/`. The `websocket_api` image installs Node dependencies on first build. The `nextjs_client` image runs a production Next.js compile (~1–2 minutes first time). Brief connection warnings in early log lines are normal.
 
 ## Step 3 — Verify Each Service
 
@@ -126,6 +126,20 @@ npx wscat -c ws://localhost:8081
 
 You should receive JSON payloads only when `is_flagged: true` and `scores.toxicity >= 0.5`. Benign comments are filtered at the bridge.
 
+## Step 6 — Verify Dashboard
+
+Open <http://localhost:3000> in a browser.
+
+- The **Live Alert Feed** (left column) shows scrolling flagged comments with toxicity color-coding.
+- The **Network Graph** (right column) renders an animating force-directed graph of users and comments.
+- Both panels update in real time as the pipeline streams.
+
+```bash
+docker-compose logs -f nextjs_client
+```
+
+If the feed shows "Connecting to alert stream…" for more than a few seconds, confirm `websocket_api` is running and the ML consumer is producing flagged messages (see troubleshooting below).
+
 ### Full E2E checklist
 
 | Step | Command / URL | Success |
@@ -136,6 +150,7 @@ You should receive JSON payloads only when `is_flagged: true` and `scores.toxici
 | Neo4j graph | http://localhost:7474 | User/Comment nodes present |
 | WebSocket health | `curl http://localhost:8081/health` | `{"status":"ok"}` |
 | Flagged alerts | `npx wscat -c ws://localhost:8081` | Flagged JSON only |
+| Dashboard | http://localhost:3000 | Live feed + force graph updating |
 
 ## Bare-Metal Development (Optional)
 
@@ -163,6 +178,18 @@ node index.js
 
 Defaults use `localhost:9092` for Kafka and listen on `:8081`.
 
+**Frontend dashboard** on the host (infrastructure in Docker):
+
+```bash
+docker-compose up -d kafka producer_service ml_consumer websocket_api
+
+cd frontend
+npm install
+npm run dev
+```
+
+Open <http://localhost:3000>. WebSocket defaults to `ws://localhost:8081`. See [Frontend Dashboard](frontend.md) for component details.
+
 ## Everyday Operations
 
 | Action | Command |
@@ -172,6 +199,7 @@ Defaults use `localhost:9092` for Kafka and listen on `:8081`.
 | Re-stream the dataset | `docker-compose up -d producer_service` |
 | Restart ML consumer | `docker-compose restart ml_consumer` |
 | Restart WebSocket API | `docker-compose restart websocket_api` |
+| Restart dashboard | `docker-compose restart nextjs_client` |
 | Stop everything | `docker-compose down` |
 | Full reset (wipes volumes) | `docker-compose down -v` |
 | Rebuild after code changes | `docker-compose up --build -d` |
@@ -201,3 +229,6 @@ Confirm the stack is up (`docker-compose ps`) and Kafka has finished KRaft init.
 
 **Changing the streaming rate.**
 Edit `MESSAGES_PER_SECOND` under `producer_service` in `docker-compose.yml` and re-run `docker-compose up -d producer_service`. Bare-metal runs respect the same environment variable.
+
+**Dashboard shows "Connecting to alert stream…" indefinitely.**
+Confirm `websocket_api` is healthy (`curl http://localhost:8081/health`) and `ml_consumer` is processing batches. The dashboard WebSocket targets `ws://localhost:8081` from the browser — ensure that port is reachable. Most stream traffic is benign and filtered; wait for flagged messages to appear.

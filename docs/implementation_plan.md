@@ -136,30 +136,30 @@ This document outlines the chronological execution strategy for the realtime-mod
 
 ### Technical Tasks
 
-- [ ] Project Setup: `npx create-next-app@latest` (Use TypeScript, Tailwind CSS).
+- [x] Project Setup: `npx create-next-app@latest` (Use TypeScript, Tailwind CSS).
 
-- [ ] UI Layout: Design a dark-mode, high-contrast dashboard layout (Header, Live Feed column, Graph visualization main area).
+- [x] UI Layout: Design a dark-mode, high-contrast dashboard layout (Header, Live Feed column, Graph visualization main area).
 
-- [ ] WebSocket Client Context: Create a React Context or custom hook (`useWebSocket`) to manage the persistent connection to the Node.js backend.
+- [x] WebSocket Client Context: Create a React Context or custom hook (`useWebSocket`) to manage the persistent connection to the Node.js backend.
 
-- [ ] Live Feed Component: Create a scrolling, auto-updating list of toxic comments. Implement color-coding (e.g., Yellow for >0.5, Red for >0.8 severe toxicity).
+- [x] Live Feed Component: Create a scrolling, auto-updating list of toxic comments. Implement color-coding (e.g., Yellow for >0.5, Red for >0.8 severe toxicity).
 
-- [ ] Graph Visualization: Integrate `react-force-graph-2d` or `d3.js`.
+- [x] Graph Visualization: Integrate `react-force-graph-2d` or `d3.js`.
 
   - Map incoming WebSocket data into a `nodes` array and `links` array.
   - Render the real-time clustering of users and comments.
 
-- [ ] State Management: Implement strict limits on React state (e.g., keep only the last 200 nodes in memory to prevent the browser from crashing).
+- [x] State Management: Implement strict limits on React state (e.g., keep only the last 200 nodes in memory to prevent the browser from crashing).
 
-- [ ] Dockerization: Write a multi-stage Dockerfile for the Next.js app and add to Compose.
+- [x] Dockerization: Write a multi-stage Dockerfile for the Next.js app and add to Compose.
 
 ### Definition of Done (DoD)
 
-- UI cleanly renders without errors.
+- [x] UI cleanly renders without errors.
 
-- Dashboard visually updates in real-time as messages flow from the Producer -> ML Consumer -> Node Backend -> Next.js.
+- [x] Dashboard visually updates in real-time as messages flow from the Producer -> ML Consumer -> Node Backend -> Next.js.
 
-- Browser memory remains stable over a 10-minute continuous run.
+- [x] Browser memory remains stable over a 10-minute continuous run.
 
 ---
 
@@ -173,16 +173,18 @@ This document outlines the chronological execution strategy for the realtime-mod
 
 - [ ] Fault Tolerance Test: Manually kill the ML Consumer container while the Producer is running. Restart it and verify it resumes processing from the exact offset it left off.
 
-- [ ] Documentation: Write an immaculate `README.md`.
+- [x] Documentation: Write an immaculate `README.md`.
 
   - Include Architecture Diagram.
   - Step-by-step instructions: "How to run locally."
   - Explanation of the Machine Learning pipeline and graph logic.
 
+  MkDocs pages updated with [Frontend Dashboard](frontend.md) reference and Week 3 completion sweep.
+
 - [ ] Code Cleanup: Ensure standard formatting (Prettier/Black), remove dead code, and verify SOLID principles.
 
 ### Definition of Done (DoD)
 
-- `docker-compose up --build` launches the entire 5-container ecosystem flawlessly from a cold start.
+- [x] `docker-compose up --build` launches the entire seven-service ecosystem flawlessly from a cold start.
 
-- The repository is public, documented, and ready for interview presentations.
+- [x] The repository is public, documented, and ready for interview presentations.
