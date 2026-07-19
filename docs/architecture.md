@@ -11,9 +11,12 @@ flowchart LR
         kafka[(Kafka broker<br/>KRaft mode)]
         consumer[ml_consumer]
         wsapi[websocket_api]
+        nextjs[nextjs_client]
         kafkaui[Kafka UI]
         neo4j[(Neo4j 5)]
     end
+
+    browser[Browser]
 
     producer -- "raw_comments" --> kafka
     kafka --> consumer
@@ -21,6 +24,8 @@ flowchart LR
     consumer -- "scored_comments" --> kafka
     kafka --> wsapi
     kafka --> kafkaui
+    wsapi -- "WebSocket :8081" --> browser
+    browser -- "HTTP :3000" --> nextjs
 ```
 
 Each service has exactly one responsibility:
@@ -31,6 +36,7 @@ Each service has exactly one responsibility:
 | `kafka` | Buffer, order, and durably store the event stream | Partitions allow parallel consumers |
 | `ml_consumer` | Batched toxicity inference, Neo4j graph writes, scored republish | Scale consumer group members per partition |
 | `websocket_api` | Consume `scored_comments`, filter flagged content, WebSocket fan-out | Scale with connected client count; filter reduces egress |
+| `nextjs_client` | Real-time SOC dashboard — live feed + force-directed graph | Stateless; browser connects to `websocket_api` via host port |
 | `neo4j` | Persist the social graph (users, comments, reply edges) | Independent of stream throughput |
 | `kafka_ui` | Operational visibility into topics and consumers | Dev tooling only |
 
@@ -42,7 +48,7 @@ A message queue between services solves three problems that direct HTTP calls ca
 
 1. **Throughput mismatch.** The producer emits ~50 msg/sec; transformer inference is slower and bursty. Kafka absorbs the difference — the ML consumer pulls batches at its own pace instead of being overwhelmed.
 2. **Durability and replay.** Messages are persisted with offsets. If the ML consumer crashes mid-stream, it resumes from its last committed offset with zero data loss (PRD fault-tolerance requirement). During development, a consumer can replay the whole topic from offset 0.
-3. **Fan-out.** One event stream feeds multiple independent consumers without producers knowing or caring. Today `scored_comments` is consumed by `websocket_api` (browser alerts) while the ML path remains fully decoupled from the UI layer.
+3. **Fan-out.** One event stream feeds multiple independent consumers without producers knowing or caring. `scored_comments` is consumed by `websocket_api` (browser alerts) while the ML path remains fully decoupled from the UI layer.
 
 ## Why KRaft Instead of Zookeeper?
 
@@ -90,9 +96,17 @@ Queries like "find users whose replies to each other are consistently toxic" are
 
 The `websocket_api` service is the last link in the Week 2 backend chain. It subscribes to `scored_comments` independently of the ML consumer — a separate consumer group (`websocket-bridge`) on the same topic.
 
-Before broadcast, it filters payloads where `is_flagged` is false or `scores.toxicity` is below the threshold. This mirrors PRD Section 4.3: only high-severity alerts reach connected clients, saving bandwidth and keeping the future dashboard responsive.
+Before broadcast, it filters payloads where `is_flagged` is false or `scores.toxicity` is below the threshold. This mirrors PRD Section 4.3: only high-severity alerts reach connected clients, saving bandwidth and keeping the dashboard responsive.
 
 See [WebSocket API](websocket_api.md) for env vars, port map, and E2E testing.
+
+## Frontend Dashboard
+
+The `nextjs_client` service serves the Next.js command center on port `3000`. The browser loads the dashboard over HTTP, then opens a **client-side** WebSocket to `ws://localhost:8081` (not the internal Docker hostname). Two client components — `LiveFeed` and `NetworkGraph` — each subscribe independently and maintain their own connection.
+
+State is bounded in the browser: the feed keeps the last **100** alerts; the force graph caps at **200** comment nodes. Upstream filtering at `websocket_api` ensures only flagged payloads reach the UI.
+
+See [Frontend Dashboard](frontend.md) for module map, graph mapping logic, Docker setup, and verification steps.
 
 ## Delivery Guarantees (ML Consumer)
 
@@ -109,4 +123,4 @@ See [ML Inference](ml_inference.md) for the full loop and env vars.
 - **Single-broker, single-partition** topics are fine for a local demo but are called out explicitly (`KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1`) — production would use 3+ brokers.
 - **Model weights and datasets never enter images or git** — they are volume-mounted and gitignored, keeping images slim and the repo lightweight. CPU-only PyTorch is pinned in `requirements.txt` for the same reason (no CUDA wheel in a GPU-less container).
 - **Offsets commit only after downstream writes succeed** — the delivery guarantee chain is implemented end to end in `ml_consumer/main.py`.
-- **Filter before broadcast** — the WebSocket bridge drops benign `scored_comments` messages client-side rather than pushing filtering burden to the frontend.
+- **Filter before broadcast** — the WebSocket bridge drops benign `scored_comments` messages before they reach browser clients; the dashboard does not re-filter.

@@ -73,7 +73,7 @@ The ML consumer republishes each message with inference results appended:
 
 **Score keys:** `toxicity`, `severe_toxicity`, `obscene`, `threat`, `insult`, `identity_attack`. There is no `sexual_explicit` score — toxic-bert exposes six labels, not seven.
 
-Downstream, `websocket_api` broadcasts only payloads where `is_flagged` is true and `scores.toxicity >= 0.5`.
+Downstream, `websocket_api` broadcasts only payloads where `is_flagged` is true and `scores.toxicity >= 0.5`. The Next.js dashboard consumes these over WebSocket and maps them to a live alert feed and force-directed graph — see [Frontend Dashboard](frontend.md).
 
 ## Synthetic Graph Generation
 

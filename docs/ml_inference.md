@@ -157,5 +157,6 @@ Processing should resume from the last committed offset without duplicate graph 
 
 - [Data Pipeline](data_pipeline.md) — topic schemas and synthetic graph generation
 - [WebSocket API](websocket_api.md) — downstream consumer of `scored_comments`
+- [Frontend Dashboard](frontend.md) — browser UI consuming flagged alerts
 - [Local Setup](local_setup.md) — verification steps and troubleshooting
 - [Architecture](architecture.md) — why Kafka buffering and manual commits matter
