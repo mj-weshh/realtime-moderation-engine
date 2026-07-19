@@ -1,3 +1,5 @@
+import LiveFeed from "@/components/LiveFeed";
+
 export default function Home() {
   return (
     <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[320px_1fr]">
@@ -7,11 +9,7 @@ export default function Home() {
             Live Alert Feed
           </h3>
         </div>
-        <div className="flex flex-1 items-center justify-center p-6">
-          <p className="text-center text-sm text-command-muted">
-            Live Alert Feed — connecting in Day 14
-          </p>
-        </div>
+        <LiveFeed />
       </section>
 
       <section className="flex min-h-0 flex-col">
