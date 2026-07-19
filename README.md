@@ -19,7 +19,7 @@ The [`google/civil_comments`](https://huggingface.co/datasets/google/civil_comme
 
 > **Status:** Week 2 complete — the full backend pipeline is live (producer → ML consumer → WebSocket bridge). The Next.js frontend is under active development.
 
-The stack runs Kafka in **KRaft mode** (no Zookeeper — Kafka 4.x removed it; the broker manages its own metadata quorum). All services share a custom Docker bridge network, `moderation_network`, and address each other by service name.
+The stack runs Kafka in **KRaft mode** (no Zookeeper). All containerized services share `moderation_network` and address each other by service name. The ML consumer currently runs bare-metal for development.
 
 ```mermaid
 flowchart LR
@@ -100,7 +100,9 @@ The first `ml_consumer` build installs CPU-only PyTorch and transformers. The fi
 - WebSocket — `npx wscat -c ws://localhost:8081` → flagged comment JSON streams in.
 - Health — `curl http://localhost:8081/health` → `{"status":"ok"}`.
 
-The producer streams the full 97k-comment dataset (~32 minutes at the default rate) and exits cleanly. Re-run it any time with `docker-compose up -d producer_service`.
+The producer streams the full 97k-comment dataset (~32 minutes at the default rate) and exits cleanly. Re-run it with `docker-compose up -d producer_service`.
+
+For ML consumer setup (model download, inference, Neo4j smoke tests), see [docs/ml_inference.md](docs/ml_inference.md) or the MkDocs site.
 
 ## Documentation
 
