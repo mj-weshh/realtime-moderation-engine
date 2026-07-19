@@ -93,6 +93,19 @@ services:
     networks:
       - moderation_network
 
+  websocket_api:
+    build: ./backend_api
+    container_name: websocket_api
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      KAFKA_BROKER: kafka:29092
+      PORT: "8081"
+    networks:
+      - moderation_network
+
 networks:
   # Custom bridge network: containers attached to it resolve each other by
   # service name via Docker's embedded DNS (e.g. "kafka:9092"), so we never
