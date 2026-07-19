@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --command-bg: #0f1419;
+  --command-surface: #1a1f2e;
+  --command-border: #334155;
+  --command-text: #e2e8f0;
+  --command-muted: #94a3b8;
+  --command-accent: #06b6d4;
+  --command-accent-muted: #8b5cf6;
+}
+
+@theme inline {
+  --color-command-bg: var(--command-bg);
+  --color-command-surface: var(--command-surface);
+  --color-command-border: var(--command-border);
+  --color-command-text: var(--command-text);
+  --color-command-muted: var(--command-muted);
+  --color-command-accent: var(--command-accent);
+  --color-command-accent-muted: var(--command-accent-muted);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  html {
+    @apply h-full;
+  }
+
+  body {
+    @apply h-full bg-command-bg text-command-text antialiased;
+  }
+}
