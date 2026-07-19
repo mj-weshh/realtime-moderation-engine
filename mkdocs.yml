@@ -55,6 +55,7 @@ nav:
   - Local Setup: local_setup.md
   - Data Pipeline: data_pipeline.md
   - ML Inference: ml_inference.md
+  - WebSocket API: websocket_api.md
   - Reference:
       - Product Requirements (PRD): PRD.md
       - Implementation Plan: implementation_plan.md
